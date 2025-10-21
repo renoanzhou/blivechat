@@ -84,6 +84,15 @@ class AppConfig:
         self.registered_endpoints: List[str] = []
         self.cors_origins: List[re.Pattern[str]] = []
 
+        self.study_room_command_prefixes: List[str] = ['/', '／']
+        self.study_room_join_aliases: List[str] = ['加入图书馆', '占座', '加入座位', '入座']
+        self.study_room_leave_aliases: List[str] = ['离开', '离开座位', 'leave']
+        self.study_room_study_aliases: List[str] = ['我要学习', '我在学习', 'study']
+        self.study_room_rest_aliases: List[str] = ['我要休息', '我在休息', '休息一下']
+        self.study_room_activity_window_ms: int = 60 * 60 * 1000
+        self.study_room_activity_min_messages: int = 1
+        self.study_room_inactivity_timeout_ms: int = 60 * 60 * 1000
+
     @property
     def is_open_live_configured(self):
         return (
@@ -109,6 +118,7 @@ class AppConfig:
             self._load_text_emoticons(config)
             self._load_registered_endpoints(config)
             self._load_cors_origins(config)
+            self._load_study_room_config(config)
         except Exception:  # noqa
             logger.exception('Failed to load config:')
             return False
@@ -235,11 +245,51 @@ class AppConfig:
         ]
         self.cors_origins = cors_origins
 
+    def _load_study_room_config(self, config: configparser.ConfigParser):
+        try:
+            section = config['study_room']
+        except KeyError:
+            return
+
+        def _parse_list(value: str, fallback: List[str]) -> List[str]:
+            parts = [item.strip() for item in re.split(r'[,;\n]+', value) if item.strip()]
+            return parts or fallback
+
+        self.study_room_command_prefixes = _parse_list(
+            section.get('command_prefixes', ''), self.study_room_command_prefixes
+        )
+        self.study_room_join_aliases = _parse_list(
+            section.get('join_aliases', ''), self.study_room_join_aliases
+        )
+        self.study_room_leave_aliases = _parse_list(
+            section.get('leave_aliases', ''), self.study_room_leave_aliases
+        )
+        self.study_room_study_aliases = _parse_list(
+            section.get('study_aliases', ''), self.study_room_study_aliases
+        )
+        self.study_room_rest_aliases = _parse_list(
+            section.get('rest_aliases', ''), self.study_room_rest_aliases
+        )
+
+        self.study_room_activity_window_ms = section.getint(
+            'activity_window_ms', fallback=self.study_room_activity_window_ms
+        )
+        self.study_room_activity_min_messages = max(
+            1, section.getint('activity_min_messages', fallback=self.study_room_activity_min_messages)
+        )
+        self.study_room_inactivity_timeout_ms = section.getint(
+            'inactivity_timeout_ms', fallback=self.study_room_inactivity_timeout_ms
+        )
+
     def is_allowed_cors_origin(self, origin):
         return any(
             pattern.fullmatch(origin) is not None
             for pattern in self.cors_origins
         )
+
+    @property
+    def study_room_primary_join_alias(self) -> str:
+        return self.study_room_join_aliases[0] if self.study_room_join_aliases else '加入图书馆'
 
 
 def _str_to_list(value, item_type: Type = str, container_type: Type = list):

@@ -42,9 +42,10 @@ const PRESET_CSS_URL = '/custom_public/preset.css'
 const OBS_CSS_SIGN = 'blc-inject-into-template'
 
 class CustomTemplateRenderer {
-  constructor(templateIframe, config) {
+  constructor(templateIframe, config, roomInfo = null) {
     this._templateIframe = templateIframe
     this._config = config
+    this._roomInfo = roomInfo || { roomKeyType: null, roomKeyValue: null }
 
     this._enabledSendMessageToTemplate = (type, data) => {
       let msg = { type, data }
@@ -117,7 +118,8 @@ class CustomTemplateRenderer {
           mergeSimilarDanmaku: this._config.mergeSimilarDanmaku,
           mergeGift: this._config.mergeGift,
           maxNumber: this._config.maxNumber,
-        }
+        },
+        roomInfo: this._roomInfo,
       }
       this._sendMessageToTemplate = this._enabledSendMessageToTemplate
       this._sendMessageToTemplate('blcInit', initData)
@@ -262,7 +264,10 @@ export default {
   },
   mounted() {
     if (this.useCustomTemplate) {
-      this.renderer = new CustomTemplateRenderer(this.$refs.templateIframe, this.config)
+      this.renderer = new CustomTemplateRenderer(this.$refs.templateIframe, this.config, {
+        roomKeyType: this.roomKeyType,
+        roomKeyValue: this.roomKeyValue,
+      })
     } else {
       this.renderer = new DefaultRenderer(this.$refs.renderer)
     }
@@ -354,6 +359,16 @@ export default {
       }
       cfg = mergeConfig(cfg, chatConfig.deepCloneDefaultConfig())
 
+      // Default to server-relay mode for the study-room template
+      // so the backend can process keywords (join/leave) and manage seats.
+      try {
+        const isStudyRoom = typeof cfg.templateUrl === 'string' && cfg.templateUrl.indexOf('/custom_public/study-room') !== -1
+        const userProvided = Object.prototype.hasOwnProperty.call(this.strConfig, 'relayMessagesByServer') && this.strConfig.relayMessagesByServer !== ''
+        if (isStudyRoom && !userProvided) {
+          cfg.relayMessagesByServer = true
+        }
+      } catch (e) {}
+
       cfg.minGiftPrice = toFloat(cfg.minGiftPrice, chatConfig.DEFAULT_CONFIG.minGiftPrice)
       cfg.showDanmaku = toBool(cfg.showDanmaku)
       cfg.showGift = toBool(cfg.showGift)
@@ -376,6 +391,8 @@ export default {
       cfg.emoticons = this.toObjIfJson(cfg.emoticons)
 
       chatConfig.sanitizeConfig(cfg)
+      cfg.roomKeyType = this.roomKeyType
+      cfg.roomKeyValue = this.roomKeyValue
       this.config = cfg
     },
     toObjIfJson(str) {

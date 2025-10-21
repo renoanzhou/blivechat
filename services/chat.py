@@ -15,6 +15,7 @@ import blivedm.blivedm.models.web as dm_web_models
 import config
 import services.avatar
 import services.plugin
+import services.study_room
 import services.translate
 import utils.async_io
 import utils.request
@@ -407,6 +408,7 @@ class ClientRoomManager:
 
         logger.info('room=%s removing client room', room_key)
         room.clear_clients()
+        utils.async_io.create_task_with_ref(services.study_room.remove_room(room_key))
         logger.info('room=%s client room removed, %d client rooms', room_key, len(self._rooms))
 
         _live_client_manager.del_live_client(room_key)
@@ -514,6 +516,25 @@ class LiveMsgHandler(blivedm.BaseHandler):
         room = client_room_manager.get_room(client.room_key)
         if room is None:
             return
+
+        try:
+            logger.info(
+                "study_room.forward room=%s key=%s user=%s text=%s",
+                room.room_key,
+                client.room_key,
+                message.uname,
+                message.msg,
+            )
+            timestamp_ms = int(message.timestamp) if message.timestamp else None
+            await services.study_room.process_text(
+                room.room_key,
+                message.uname,
+                message.msg,
+                user_id=str(message.uid) if message.uid else None,
+                timestamp_ms=timestamp_ms,
+            )
+        except Exception:
+            logger.exception('Failed to process study room message (web)')
 
         if message.uid == client.room_owner_uid:
             author_type = 3  # 主播
@@ -734,70 +755,85 @@ class LiveMsgHandler(blivedm.BaseHandler):
     # 开放平台消息
     #
 
-    def _on_open_live_danmaku(self, client: OpenLiveClient, message: dm_open_models.DanmakuMessage):
-        room = client_room_manager.get_room(client.room_key)
-        if room is None:
-            return
-
-        if message.open_id == client.room_owner_open_id:
-            author_type = 3  # 主播
-        elif message.is_admin:
-            author_type = 2  # 房管
-        elif message.guard_level != 0:  # 1总督，2提督，3舰长
-            author_type = 1  # 舰队
-        else:
-            author_type = 0
-
-        show_content = message.msg
-        if message.reply_uname != '':
-            show_content = f'@{message.reply_uname} {show_content}'
-
-        if message.dm_type == 1:
-            content_type = api.chat.ContentType.EMOTICON
-            content_type_params = api.chat.make_emoticon_params(message.emoji_img_url)
-        else:
-            content_type = api.chat.ContentType.TEXT
-            content_type_params = None
-
-        need_translate = (
-            content_type != api.chat.ContentType.EMOTICON and self._need_translate(message.msg, room, client)
-        )
-        if need_translate:
-            translation = services.translate.get_translation_from_cache(message.msg)
-            if translation is None:
-                # 没有缓存，需要后面异步翻译后通知
-                translation = ''
-            else:
-                need_translate = False
-        else:
-            translation = ''
-
-        data = api.chat.make_text_message_data(
-            avatar_url=services.avatar.process_avatar_url(message.uface),
-            timestamp=message.timestamp,
-            author_name=message.uname,
-            author_type=author_type,
-            content=show_content,
-            privilege_type=message.guard_level,
-            medal_level=0 if not message.fans_medal_wearing_status else message.fans_medal_level,
-            id_=message.msg_id,
-            translation=translation,
-            content_type=content_type,
-            content_type_params=content_type_params,
-            # 给插件用的字段
-            uid=message.open_id,
-            medal_name='' if not message.fans_medal_wearing_status else message.fans_medal_name,
-        )
-        room.send_cmd_data(api.chat.Command.ADD_TEXT, data)
-        services.plugin.broadcast_cmd_data(
-            sdk_models.Command.ADD_TEXT, data, make_plugin_msg_extra_from_live_client(client)
-        )
-
-        if need_translate:
-            utils.async_io.create_task_with_ref(self._translate_and_response(
-                message.msg, room.room_key, message.msg_id
-            ))
-
+    def _on_open_live_danmaku(self, client: OpenLiveClient, message: dm_open_models.DanmakuMessage):
+        utils.async_io.create_task_with_ref(self.__on_open_live_danmaku(client, message))
+
+    async def __on_open_live_danmaku(self, client: OpenLiveClient, message: dm_open_models.DanmakuMessage):
+        room = client_room_manager.get_room(client.room_key)
+        if room is None:
+            return
+
+        try:
+            timestamp_ms = int(message.timestamp * 1000) if message.timestamp else None
+            await services.study_room.process_text(
+                room.room_key,
+                message.uname,
+                message.msg,
+                user_id=message.open_id,
+                timestamp_ms=timestamp_ms,
+            )
+        except Exception:
+            logger.exception('Failed to process study room message (open live)')
+
+        if message.open_id == client.room_owner_open_id:
+            author_type = 3  # ����
+        elif message.is_admin:
+            author_type = 2  # ����
+        elif message.guard_level != 0:  # 1�ܶ���2�ᶽ��3����
+            author_type = 1  # ����
+        else:
+            author_type = 0
+
+        show_content = message.msg
+        if message.reply_uname != '':
+            show_content = f'@{message.reply_uname} {show_content}'
+
+        if message.dm_type == 1:
+            content_type = api.chat.ContentType.EMOTICON
+            content_type_params = api.chat.make_emoticon_params(message.emoji_img_url)
+        else:
+            content_type = api.chat.ContentType.TEXT
+            content_type_params = None
+
+        need_translate = (
+            content_type != api.chat.ContentType.EMOTICON and self._need_translate(message.msg, room, client)
+        )
+        if need_translate:
+            translation = services.translate.get_translation_from_cache(message.msg)
+            if translation is None:
+                # û�л��棬��Ҫ�����첽�����֪ͨ
+                translation = ''
+            else:
+                need_translate = False
+        else:
+            translation = ''
+
+        data = api.chat.make_text_message_data(
+            avatar_url=services.avatar.process_avatar_url(message.uface),
+            timestamp=message.timestamp,
+            author_name=message.uname,
+            author_type=author_type,
+            content=show_content,
+            privilege_type=message.guard_level,
+            medal_level=0 if not message.fans_medal_wearing_status else message.fans_medal_level,
+            id_=message.msg_id,
+            translation=translation,
+            content_type=content_type,
+            content_type_params=content_type_params,
+            # ������õ��ֶ�
+            uid=message.open_id,
+            medal_name='' if not message.fans_medal_wearing_status else message.fans_medal_name,
+        )
+        room.send_cmd_data(api.chat.Command.ADD_TEXT, data)
+        services.plugin.broadcast_cmd_data(
+            sdk_models.Command.ADD_TEXT, data, make_plugin_msg_extra_from_live_client(client)
+        )
+
+        if need_translate:
+            utils.async_io.create_task_with_ref(self._translate_and_response(
+                message.msg, room.room_key, message.msg_id
+            ))
+
     def _on_open_live_gift(self, client: OpenLiveClient, message: dm_open_models.GiftMessage):
         room = client_room_manager.get_room(client.room_key)
         if room is None:

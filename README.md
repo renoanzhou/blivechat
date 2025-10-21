@@ -20,6 +20,7 @@
 * 支持配置自定义表情，不需要开通B站官方表情
 * 支持[自定义HTML模板](https://github.com/xfgryujk/blivechat/wiki/%E8%87%AA%E5%AE%9A%E4%B9%89HTML%E6%A8%A1%E6%9D%BF)
 * 支持[插件开发](https://github.com/xfgryujk/blivechat/wiki/%E6%8F%92%E4%BB%B6%E7%B3%BB%E7%BB%9F)
+* 直播图书馆支持弹幕指令加入、候补队列与可配置的自动离席规则
 
 ## 使用方法
 
