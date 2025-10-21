@@ -11,6 +11,19 @@ function toBool(val) {
 }
 
 module.exports = defineConfig({
+  pages: {
+    index: {
+      entry: 'src/main.js',
+      template: 'public/index.html',
+      filename: 'index.html',
+    },
+    library: {
+      entry: 'src-library/main.js',
+      template: 'public/library.html',
+      filename: 'custom_public/study-room/index.html',
+      chunks: ['chunk-vendors', 'chunk-common', 'library'],
+    },
+  },
   devServer: {
     proxy: {
       '/api': {
