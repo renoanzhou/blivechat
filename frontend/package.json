@@ -6,7 +6,9 @@
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "build_common_server": "vue-cli-service build --mode common_server",
-    "lint": "vue-cli-service lint"
+    "lint": "vue-cli-service lint",
+    "build:library": "npm run build && node scripts/copy-library.js",
+    "build:pixel-library": "vue-cli-service build && node ../scripts/copy-pixel-template.js"
   },
   "dependencies": {
     "axios": "^1.4.0",

@@ -13,4 +13,5 @@
 ## 3. 兼容性与质量
 - [ ] 3.1 回归逻辑层功能（候补、自动离席、toast）在新主题下的表现。
 - [ ] 3.2 更新文档与手动测试计划，描述主题切换及像素风效果验证。
-- [ ] 3.3 运行 `openspec validate update-study-room-ui-pixel --strict` 并确保 lint 通过。
+- [ ] 3.3 提供模板构建脚本（`npm run build:pixel-library`），输出至 `data/custom_public/templates/pixel-library/`。
+- [ ] 3.4 运行 `openspec validate update-study-room-ui-pixel --strict` 并确保 lint 通过。

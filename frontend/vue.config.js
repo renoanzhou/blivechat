@@ -1,12 +1,7 @@
 const { defineConfig } = require('@vue/cli-service')
-const path = require('path')
 
 // 不能用localhost，https://forum.dfinity.org/t/development-workflow-quickly-test-code-modifications/1793/21
 const API_BASE_URL = 'http://127.0.0.1:12450'
-const STUDY_ROOM_OUTPUT_PATH = path.resolve(
-  __dirname,
-  '../data/custom_public/study-room/index.html'
-)
 
 function toBool(val) {
   if (typeof val === 'string') {
@@ -25,8 +20,7 @@ module.exports = defineConfig({
     library: {
       entry: 'src-library/main.js',
       template: 'public/library.html',
-      // 将Study Room输出到后端静态目录，避免额外的拷贝步骤
-      filename: STUDY_ROOM_OUTPUT_PATH,
+      filename: 'library.html',
       chunks: ['chunk-vendors', 'chunk-common', 'library'],
     },
   },

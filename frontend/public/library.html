@@ -3,10 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+    <meta name="referrer" content="no-referrer" />
     <title>直播图书馆 Pixel</title>
+    <% for (var css of htmlWebpackPlugin.files.css) { %>
+    <link rel="stylesheet" href="./<%= css %>" />
+    <% } %>
   </head>
   <body>
     <div id="app"></div>
+    <script src="./blcsdk.js"></script>
+    <% for (var js of htmlWebpackPlugin.files.js) { %>
+    <script src="./<%= js %>" defer></script>
+    <% } %>
   </body>
 </html>

@@ -1,6 +1,6 @@
 <template>
   <div class="library-shell">
-    <div class="library-shell__inner" :class="{ 'is-offline': !isOnline }">
+    <div class="library-shell__inner" :class="innerClass">
       <div class="library-shell__background" :style="backgroundStyle"></div>
       <div class="library-shell__overlay">
         <header class="join-banner" v-if="joinBannerVisible">
@@ -48,8 +48,8 @@
           </ol>
         </aside>
 
-        <div class="library-shell__offline" v-if="!isOnline">
-          <span>连接中断</span>
+        <div class="library-shell__offline" v-if="shouldShowStatus">
+          <span>{{ overlayText }}</span>
         </div>
       </div>
     </div>
@@ -80,12 +80,36 @@ export default {
       type: Boolean,
       default: true,
     },
+    connectionState: {
+      type: String,
+      default: 'loading',
+    },
     activityHint: {
       type: String,
       default: '',
     },
   },
   computed: {
+    innerClass() {
+      return {
+        'is-offline': this.connectionState !== 'online',
+      }
+    },
+    shouldShowStatus() {
+      return this.connectionState !== 'online'
+    },
+    overlayText() {
+      switch (this.connectionState) {
+      case 'missing-room':
+        return '缺少 roomKeyValue 参数，无法连接房间'
+      case 'loading':
+        return '加载中…'
+      case 'offline':
+        return '连接中断'
+      default:
+        return '连接状态未知'
+      }
+    },
     joinBannerVisible() {
       return Boolean(this.joinPrompt && this.joinPrompt.primaryCommand)
     },

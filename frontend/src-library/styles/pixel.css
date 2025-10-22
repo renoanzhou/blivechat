@@ -37,6 +37,15 @@ body {
   position: relative;
 }
 
+.pixel-layout__right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
 .library-shell {
   position: relative;
   height: 100%;

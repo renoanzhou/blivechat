@@ -7,14 +7,14 @@
         :join-prompt="joinPrompt"
         :waitlist="waitlist"
         :is-online="isOnline"
+        :connection-state="connectionState"
         :background-url="backgroundUrl"
         :activity-hint="activityHint"
       />
-      <SeatBoard
-        class="pixel-layout__right"
-        :seats="seats"
-        :is-online="isOnline"
-      />
+      <div class="pixel-layout__right">
+        <SeatBoard :seats="seats" :is-online="isOnline" />
+        <DebugPanel v-if="debugEnabled" :room-info="roomInfo" />
+      </div>
     </main>
     <ToastStack :toasts="toasts" />
   </div>
@@ -24,9 +24,11 @@
 import LibraryView from './components/LibraryView.vue'
 import SeatBoard from './components/SeatBoard.vue'
 import ToastStack from './components/ToastStack.vue'
+import DebugPanel from './components/DebugPanel.vue'
 
 const POLL_INTERVAL_MS = 5000
 const TOAST_TIMEOUT_MS = 4500
+const REFRESH_DEBOUNCE_MS = 400
 
 export default {
   name: 'LibraryApp',
@@ -34,24 +36,44 @@ export default {
     LibraryView,
     SeatBoard,
     ToastStack,
+    DebugPanel,
+  },
+  props: {
+    sdk: {
+      type: Object,
+      default: null,
+    },
+    initialRoomKeyType: {
+      type: Number,
+      default: 1,
+    },
+    initialRoomKeyValue: {
+      type: String,
+      default: null,
+    },
   },
   data() {
     return {
+      roomInfo: {
+        roomKeyType: this.initialRoomKeyType ?? 1,
+        roomKeyValue: this.initialRoomKeyValue ?? null,
+      },
       state: null,
-      isOnline: true,
+      connectionState: this.initialRoomKeyValue ? 'loading' : 'waiting',
       isFetching: false,
       pendingFetch: false,
       pollTimer: null,
-      roomInfo: {
-        roomKeyType: 1,
-        roomKeyValue: null,
-      },
+      refreshTimer: null,
       toasts: [],
       backgroundUrl: this.resolveBackgroundUrl(),
+      debugEnabled: this.resolveDebugEnabled(),
       seenEventKeys: new Set(),
     }
   },
   computed: {
+    isOnline() {
+      return this.connectionState === 'online'
+    },
     seats() {
       return this.state && Array.isArray(this.state.seats) ? this.state.seats : []
     },
@@ -70,10 +92,27 @@ export default {
       const minutes = Math.max(1, Math.round(windowMs / 60000))
       return `保持座位：${minutes} 分钟内发送至少 ${minMessages} 条弹幕`
     },
+    hasRoomKey() {
+      return Boolean(this.roomInfo.roomKeyValue)
+    },
+  },
+  watch: {
+    initialRoomKeyType(newVal) {
+      this.roomInfo.roomKeyType = newVal ?? this.roomInfo.roomKeyType
+    },
+    initialRoomKeyValue(newVal) {
+      if (newVal && newVal !== this.roomInfo.roomKeyValue) {
+        this.roomInfo.roomKeyValue = newVal
+        this.onRoomKeyReady()
+      }
+    },
   },
   created() {
-    this.roomInfo = this.resolveRoomInfo()
-    this.fetchState()
+    this.bootstrapRoomInfo()
+    this.setupSdkHandler()
+    if (this.hasRoomKey) {
+      this.onRoomKeyReady()
+    }
     this.pollTimer = window.setInterval(() => {
       this.fetchState()
     }, POLL_INTERVAL_MS)
@@ -83,50 +122,68 @@ export default {
       window.clearInterval(this.pollTimer)
       this.pollTimer = null
     }
+    if (this.refreshTimer) {
+      window.clearTimeout(this.refreshTimer)
+      this.refreshTimer = null
+    }
   },
   methods: {
-    resolveRoomInfo() {
-      const info = {
-        roomKeyType: 1,
-        roomKeyValue: null,
+    setupSdkHandler() {
+      if (!this.sdk || !this.sdk.MsgHandler) {
+        return
+      }
+      const vm = this
+      class PixelMsgHandler extends vm.sdk.MsgHandler {
+        addMsg(msg) {
+          vm.onSdkEvent('danmaku', msg)
+        }
+
+        addSuperChat(msg) {
+          vm.onSdkEvent('superChat', msg)
+        }
+
+        addGift(msg) {
+          vm.onSdkEvent('gift', msg)
+        }
+
+        addGuard(msg) {
+          vm.onSdkEvent('guard', msg)
+        }
+
+        heartbeat() {
+          vm.scheduleRefresh(1000)
+        }
       }
       try {
-        const params = new URLSearchParams(window.location.search)
-        if (params.has('roomKeyType')) {
-          const parsedType = parseInt(params.get('roomKeyType'), 10)
-          if (!Number.isNaN(parsedType)) {
-            info.roomKeyType = parsedType
-          }
-        }
-        if (params.has('roomKeyValue')) {
-          info.roomKeyValue = params.get('roomKeyValue')
-        }
-        if (!info.roomKeyValue && window.blcInitData && window.blcInitData.room) {
-          info.roomKeyType = window.blcInitData.room.type
-          info.roomKeyValue = window.blcInitData.room.value
-        }
+        this.sdk.setMsgHandler(new PixelMsgHandler())
       } catch (error) {
-        console.warn('Failed to resolve room info', error)
-      }
-      return info
-    },
-    resolveBackgroundUrl() {
-      try {
-        const params = new URLSearchParams(window.location.search)
-        return params.get('background') || params.get('bg') || ''
-      } catch (error) {
-        return ''
+        console.debug('Failed to register SDK handler', error)
       }
     },
-    buildStateUrl() {
-      const url = new URL('/api/study_room/state', window.location.origin)
-      url.searchParams.set('roomKeyType', String(this.roomInfo.roomKeyType ?? 1))
-      url.searchParams.set('roomKeyValue', String(this.roomInfo.roomKeyValue ?? ''))
-      return url
+    onSdkEvent(type, payload) {
+      if (this.debugEnabled) {
+        console.debug('[blcsdk]', type, payload)
+      }
+      this.scheduleRefresh()
+    },
+    onRoomKeyReady() {
+      this.connectionState = 'loading'
+      this.fetchState()
+    },
+    scheduleRefresh(delay = REFRESH_DEBOUNCE_MS) {
+      if (this.refreshTimer) {
+        window.clearTimeout(this.refreshTimer)
+        this.refreshTimer = null
+      }
+      this.refreshTimer = window.setTimeout(() => {
+        this.refreshTimer = null
+        this.fetchState()
+      }, delay)
     },
     async fetchState() {
       if (!this.roomInfo.roomKeyValue) {
-        this.isOnline = false
+        this.connectionState = 'missing-room'
+        this.state = null
         return
       }
       if (this.isFetching) {
@@ -142,10 +199,11 @@ export default {
         }
         const snapshot = await res.json()
         this.handleSnapshot(snapshot)
-        this.isOnline = true
+        this.connectionState = 'online'
       } catch (error) {
         console.error('Failed to fetch study room state', error)
-        this.isOnline = false
+        this.connectionState = 'offline'
+        this.state = null
       } finally {
         this.isFetching = false
         if (this.pendingFetch) {
@@ -223,6 +281,100 @@ export default {
       if (index !== -1) {
         this.toasts.splice(index, 1)
       }
+    },
+    buildStateUrl() {
+      const url = new URL('/api/study_room/state', window.location.origin)
+      url.searchParams.set('roomKeyType', String(this.roomInfo.roomKeyType ?? 1))
+      url.searchParams.set('roomKeyValue', String(this.roomInfo.roomKeyValue ?? ''))
+      return url
+    },
+    bootstrapRoomInfo() {
+      if (this.roomInfo.roomKeyValue) {
+        return
+      }
+      const tryApplyQuery = search => {
+        if (!search) {
+          return
+        }
+        const params = new URLSearchParams(search)
+        if (params.has('roomKeyValue')) {
+          this.roomInfo.roomKeyValue = this.roomInfo.roomKeyValue || params.get('roomKeyValue')
+        }
+        if (params.has('roomKeyType')) {
+          const parsedType = parseInt(params.get('roomKeyType'), 10)
+          if (!Number.isNaN(parsedType)) {
+            this.roomInfo.roomKeyType = parsedType
+          }
+        }
+      }
+      const tryApplyPath = locationLike => {
+        if (!locationLike || this.roomInfo.roomKeyValue) {
+          return
+        }
+        let pathname = ''
+        try {
+          if (typeof locationLike === 'string') {
+            pathname = new URL(locationLike).pathname
+          } else if (locationLike && typeof locationLike.pathname === 'string') {
+            pathname = locationLike.pathname
+          }
+        } catch (error) {
+          return
+        }
+        const match = pathname && pathname.match(/\/room\/([^/?#]+)/i)
+        if (match && match[1]) {
+          this.roomInfo.roomKeyValue = match[1]
+        }
+      }
+      try {
+        tryApplyQuery(window.location.search)
+        tryApplyPath(window.location)
+        if (!this.roomInfo.roomKeyValue && document.referrer) {
+          const refUrl = new URL(document.referrer)
+          tryApplyQuery(refUrl.search)
+          tryApplyPath(refUrl)
+        }
+      } catch (error) {
+        console.debug('bootstrapRoomInfo failed', error)
+      }
+    },
+    resolveBackgroundUrl() {
+      try {
+        const params = new URLSearchParams(window.location.search)
+        return params.get('background') || params.get('bg') || ''
+      } catch (error) {
+        return ''
+      }
+    },
+    resolveDebugEnabled() {
+      const matcher = value => {
+        if (value == null) {
+          return false
+        }
+        if (value === '') {
+          return true
+        }
+        return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase())
+      }
+      try {
+        const params = new URLSearchParams(window.location.search)
+        if (matcher(params.get('showDebugMessages')) || matcher(params.get('debug'))) {
+          return true
+        }
+        if (window.parent && window.parent !== window) {
+          try {
+            const parentParams = new URLSearchParams(window.parent.location.search)
+            if (matcher(parentParams.get('showDebugMessages')) || matcher(parentParams.get('debug'))) {
+              return true
+            }
+          } catch (error) {
+            console.debug('Parent debug lookup blocked', error)
+          }
+        }
+      } catch (error) {
+        console.debug('Failed to resolve debug flag', error)
+      }
+      return false
     },
   },
 }
