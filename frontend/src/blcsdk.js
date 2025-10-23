@@ -137,6 +137,18 @@
   }
   exports.getConfig = getConfig
 
+  /**
+   * ȡ��ǰ������Ϣ
+   * @returns {?Object}
+   */
+  function getRoomInfo() {
+    if (!initMsg || !initMsg.roomInfo) {
+      return null
+    }
+    return Object.freeze({...initMsg.roomInfo})
+  }
+  exports.getRoomInfo = getRoomInfo
+
   function blcSendMsg(type, data = null) {
     if (window.parent === window) {
       return

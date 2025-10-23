@@ -7,6 +7,9 @@ const TEMPLATE_DIR = path.join(ROOT, 'data', 'custom_public', 'templates', 'pixe
 
 const JS_TARGET = path.join(TEMPLATE_DIR, 'js')
 const CSS_TARGET = path.join(TEMPLATE_DIR, 'css')
+const THUMBNAIL_TARGET = path.join(TEMPLATE_DIR, 'thumbnail.png')
+const THUMBNAIL_SOURCE = path.join(ROOT, 'frontend', 'src', 'assets', 'img', 'logo.png')
+const TEMPLATE_META_PATH = path.join(TEMPLATE_DIR, 'template.json')
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) {
@@ -62,6 +65,23 @@ function main() {
 
   fs.writeFileSync(path.join(TEMPLATE_DIR, 'index.html'), outputHtml)
   console.log('Updated template index.html')
+
+  if (fs.existsSync(THUMBNAIL_SOURCE)) {
+    copyFile(THUMBNAIL_SOURCE, THUMBNAIL_TARGET)
+  } else {
+    console.warn('Thumbnail source not found at', path.relative(ROOT, THUMBNAIL_SOURCE))
+  }
+
+  const templateMetadata = {
+    name: 'Pixel Library',
+    version: '1.0.0',
+    author: 'blivechat',
+    description: 'Study room pixel overlay template with seat board UI.',
+    thumbnail: 'thumbnail.png',
+    url: 'index.html',
+  }
+  fs.writeFileSync(TEMPLATE_META_PATH, `${JSON.stringify(templateMetadata, null, 2)}\n`)
+  console.log('Updated template metadata')
 }
 
 main()
